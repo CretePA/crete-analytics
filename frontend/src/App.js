@@ -43,7 +43,7 @@ function CyclingHello() {
         setIndex(i => (i + 1) % HELLO_PHRASES.length);
         setFade('in');
       }, 600);
-    }, 3000);
+    }, 10000);
     return () => clearInterval(timer);
   }, []);
 
@@ -253,7 +253,7 @@ function App() {
         </header>
 
         <main className="page-body">
-          <div className="page-grid">
+          <div className="page-stack">
             <div className="hello-card">
               <CyclingHello />
             </div>
