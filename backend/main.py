@@ -137,12 +137,12 @@ def _flash_query(as_of_date=None, member_firm=None):
 
 @app.get("/api/flash/firms")
 def flash_firms():
-    """List available member firms."""
+    """List available member firms from fact tables (matches filter values)."""
     sql = f"""
-        SELECT DISTINCT mf.member_firm_id, mf.member_firm_name
-        FROM {_tbl('dim_member_firm')} mf
-        WHERE mf.is_current = true
-        ORDER BY mf.member_firm_name
+        SELECT DISTINCT member_firm_id, member_firm_id as member_firm_name
+        FROM {_tbl('fct_time_entry')}
+        WHERE member_firm_id IS NOT NULL AND member_firm_id != ''
+        ORDER BY member_firm_id
     """
     return JSONResponse(run_query(sql))
 

@@ -156,15 +156,33 @@ function App() {
       <nav className={`side-nav ${navOpen ? 'open' : ''}`}>
         <div className="nav-header"><span className="nav-brand">Dashboards</span></div>
         <ul className="nav-links">
-          {NAV_LINKS.map((link, i) => (
-            <li key={i}><a href={link.url} target="_blank" rel="noopener noreferrer"><span className="nav-label">{link.label}</span></a></li>
-          ))}
           <li className={page === 'home' ? 'nav-active' : ''}>
-            <a href="#" onClick={e => { e.preventDefault(); navigate('home'); }}><span className="nav-label">Crete Analytics</span></a>
+            <a href="#" onClick={e => { e.preventDefault(); navigate('home'); }}>
+              <span className="nav-icon">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l6-6 6 6M3 7v6a1 1 0 001 1h3V10h2v4h3a1 1 0 001-1V7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </span>
+              <span className="nav-label">Home</span>
+            </a>
           </li>
           <li className={page === 'flash' ? 'nav-active' : ''}>
-            <a href="#flash" onClick={e => { e.preventDefault(); navigate('flash'); }}><span className="nav-label">Weekly Flash</span></a>
+            <a href="#flash" onClick={e => { e.preventDefault(); navigate('flash'); }}>
+              <span className="nav-icon">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 1L3 9h4l-1 6 6-8H8l1-6z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </span>
+              <span className="nav-label">Weekly Flash</span>
+            </a>
           </li>
+          <li className="nav-divider" />
+          {NAV_LINKS.map((link, i) => (
+            <li key={i}>
+              <a href={link.url} target="_blank" rel="noopener noreferrer">
+                <span className="nav-icon">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 2H3a1 1 0 00-1 1v3m0 4v3a1 1 0 001 1h3m4 0h3a1 1 0 001-1v-3m0-4V3a1 1 0 00-1-1h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </span>
+                <span className="nav-label">{link.label}</span>
+              </a>
+            </li>
+          ))}
         </ul>
       </nav>
       {navOpen && <div className="nav-overlay" onClick={() => setNavOpen(false)} />}
