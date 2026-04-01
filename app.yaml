@@ -9,6 +9,9 @@ env:
   - name: DATABRICKS_HOST
     description: "Databricks workspace hostname"
     value: "adb-7405618890836566.6.azuredatabricks.net"
+  - name: GENIE_SPACE_ID
+    description: "Genie AI/BI space ID"
+    valueFrom: genie-space
   - name: PORT
     description: "Port for the web server"
     value: "8000"
@@ -17,3 +20,6 @@ resources:
   - name: sql-warehouse
     type: sql-warehouse
     description: "SQL Warehouse for Crete Analytics queries"
+  - name: genie-space
+    type: genie-space
+    description: "Genie AI/BI space for natural language queries"
