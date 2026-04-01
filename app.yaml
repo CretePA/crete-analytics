@@ -1,0 +1,19 @@
+command:
+  - python
+  - backend/main.py
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    description: "SQL Warehouse ID for executing queries"
+    value: "351f57fd45a3f387"
+  - name: DATABRICKS_HOST
+    description: "Databricks workspace hostname"
+    value: "adb-7405618890836566.6.azuredatabricks.net"
+  - name: PORT
+    description: "Port for the web server"
+    value: "8000"
+
+resources:
+  - name: sql-warehouse
+    type: sql-warehouse
+    description: "SQL Warehouse for Crete Analytics queries"

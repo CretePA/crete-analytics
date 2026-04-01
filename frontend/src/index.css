@@ -1,0 +1,232 @@
+/* ============================================================
+   Crete Analytics — Clean modern layout
+   ============================================================ */
+
+:root {
+  --brand-dark: #17463E;
+  --brand-green: #6BA342;
+  --bg: #f5f5f0;
+  --bg-card: #ffffff;
+  --text: #1a1a1a;
+  --text-dim: #666666;
+  --border: #e0e0d8;
+  --nav-width: 240px;
+  --nav-bg: #17463E;
+  --nav-text: #ffffffcc;
+  --nav-text-hover: #ffffff;
+  --nav-active-bg: rgba(255,255,255,0.12);
+  --top-bar-height: 56px;
+  --font: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'DM Serif Display', Georgia, serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body, #root { height: 100%; }
+
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* ---- Layout ---- */
+.app-layout {
+  display: flex;
+  height: 100%;
+}
+
+/* ---- Side nav ---- */
+.side-nav {
+  width: var(--nav-width);
+  background: var(--nav-bg);
+  color: var(--nav-text);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: calc(-1 * var(--nav-width));
+  height: 100%;
+  z-index: 100;
+  transition: left 0.25s ease;
+}
+
+.side-nav.open {
+  left: 0;
+}
+
+.nav-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.nav-brand {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+
+.nav-links {
+  list-style: none;
+  padding: 12px 0;
+  flex: 1;
+}
+
+.nav-links li a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  color: var(--nav-text);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-links li a:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--nav-text-hover);
+}
+
+.nav-links li.nav-active a {
+  background: var(--nav-active-bg);
+  color: #fff;
+  font-weight: 600;
+}
+
+.nav-icon {
+  width: 20px;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.nav-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 99;
+}
+
+/* ---- Main content ---- */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  transition: margin-left 0.25s ease;
+}
+
+.nav-open .main-content {
+  margin-left: var(--nav-width);
+}
+
+/* ---- Top bar ---- */
+.top-bar {
+  height: var(--top-bar-height);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.app-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--brand-dark);
+}
+
+/* Hamburger button */
+.nav-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.nav-toggle:hover {
+  background: rgba(0,0,0,0.06);
+}
+
+.hamburger,
+.hamburger::before,
+.hamburger::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--brand-dark);
+  border-radius: 1px;
+  position: relative;
+  transition: transform 0.2s;
+}
+
+.hamburger::before,
+.hamburger::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 18px;
+}
+
+.hamburger::before { top: -6px; }
+.hamburger::after { top: 6px; }
+
+/* User greeting */
+.user-greeting {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+/* ---- Page body ---- */
+.page-body {
+  flex: 1;
+  padding: 32px 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.hello-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 48px 64px;
+  text-align: center;
+  font-size: 18px;
+  color: var(--text-dim);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+/* ---- Responsive: push nav on wider screens ---- */
+@media (min-width: 1024px) {
+  .nav-overlay { display: none; }
+}
+
+@media (max-width: 1023px) {
+  .nav-open .main-content {
+    margin-left: 0;
+  }
+}
