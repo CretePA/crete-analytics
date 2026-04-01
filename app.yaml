@@ -11,7 +11,7 @@ env:
     value: "adb-7405618890836566.6.azuredatabricks.net"
   - name: GENIE_SPACE_ID
     description: "Genie AI/BI space ID"
-    valueFrom: genie-space
+    value: "01f110cdac7311b39cb3e6f5d6a6d283"
   - name: PORT
     description: "Port for the web server"
     value: "8000"
