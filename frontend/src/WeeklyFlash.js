@@ -407,12 +407,13 @@ function WeeklyFlash() {
 
   return (
     <div className="wf-container">
-      {/* Header */}
+      {/* Header with TVP hero inside */}
       <div className="wf-header">
         <div className="wf-header-top">
           <div>
-            <div className="wf-header-title">Weekly Flash</div>
-            <div className="wf-header-subtitle">Performance Scorecard</div>
+            <div className="wf-header-subtitle">Weekly Flash</div>
+            <div className="wf-header-title">Performance Scorecard</div>
+            <div className="wf-header-meta">Week Ending: {fmtDate(asOfDate)} &mdash; {firmName}</div>
           </div>
           <div className="wf-header-controls">
             <select className="wf-select" value={memberFirm} onChange={e => setMemberFirm(e.target.value)}>
@@ -421,118 +422,137 @@ function WeeklyFlash() {
             </select>
             <input className="wf-date-input" type="date" value={asOfDate} onChange={e => setAsOfDate(e.target.value)} />
             <button className="wf-refresh-btn" onClick={fetchData} disabled={loading}>
-              {loading ? 'Loading...' : 'Refresh'}
+              {loading ? 'Loading...' : 'Apply & Refresh'}
             </button>
           </div>
         </div>
-        <div className="wf-header-meta">
-          <span>Week Ending: {fmtDate(asOfDate)}</span>
-          <span>{firmName}</span>
-        </div>
+        {!loading && timeData && <TvpHero data={timeData} />}
       </div>
 
-      {/* Error */}
-      {error && <div className="wf-error">{error}</div>}
+      {/* Content area */}
+      <div className="wf-content">
+        {/* Error */}
+        {error && <div className="wf-error">{error}</div>}
 
-      {/* Loading */}
-      {loading && <div className="wf-loading"><div className="wf-spinner" /><div>Loading scorecard data...</div></div>}
+        {/* Loading */}
+        {loading && <div className="wf-loading"><div className="wf-spinner" /><div>Loading Weekly Flash...</div></div>}
 
-      {/* Content */}
-      {!loading && !error && (
-        <>
-          {/* TVP Hero */}
-          <TvpHero data={timeData} />
-
-          {/* MTD Gauges */}
-          <div className="wf-section">
-            <div className="wf-section-title">Section 1: Performance vs. Prior Year</div>
-            <div className="wf-gauge-row-header">Month-to-Date</div>
-            <div className="wf-gauge-grid">
-              {buildGauges('MTD').map((g, i) => <GaugeCard key={i} {...g} periodLabel="MTD" />)}
-            </div>
-          </div>
-
-          {/* YTD Gauges */}
-          <div className="wf-section">
-            <div className="wf-gauge-row-header">Year-to-Date</div>
-            <div className="wf-gauge-grid">
-              {buildGauges('YTD').map((g, i) => <GaugeCard key={i} {...g} periodLabel="YTD" />)}
-            </div>
-          </div>
-
-          {/* Performance Tables */}
-          <div className="wf-section wf-perf-grid">
-            <PerfTable rows={buildPerfRows('MTD')} label="Month-to-Date" />
-            <PerfTable rows={buildPerfRows('YTD')} label="Year-to-Date" />
-          </div>
-
-          {/* Service Line Toggle */}
-          <div className="wf-section">
-            <button className="wf-sl-toggle" onClick={() => setSlExpanded(!slExpanded)}>
-              {slExpanded ? '\u25BC' : '\u25B6'} Service Line Breakdown ({serviceLines.length} lines)
-            </button>
-            {slExpanded && serviceLines.length > 0 && (
-              <div className="wf-table-wrap">
-                <table className="wf-data-table">
-                  <thead><tr><th>Service Line</th><th>CY MTD Hrs</th><th>PY MTD Hrs</th><th>% Chg</th><th>CY MTD TVP</th><th>PY MTD TVP</th><th>% Chg</th></tr></thead>
-                  <tbody>
-                    {serviceLines.map((r, i) => {
-                      const hp = pctChange(num(r.cy_mtd_hours), num(r.py_mtd_hours));
-                      const tp = pctChange(num(r.cy_mtd_tvp), num(r.py_mtd_tvp));
-                      return (
-                        <tr key={i}>
-                          <td>{r.service_line}</td>
-                          <td className="tabnum">{fmtNum(r.cy_mtd_hours)}</td>
-                          <td className="tabnum">{fmtNum(r.py_mtd_hours)}</td>
-                          <td className="tabnum" style={{ color: getRYG(hp).color }}>{pct(hp)}</td>
-                          <td className="tabnum">{fmtFull(r.cy_mtd_tvp)}</td>
-                          <td className="tabnum">{fmtFull(r.py_mtd_tvp)}</td>
-                          <td className="tabnum" style={{ color: getRYG(tp).color }}>{pct(tp)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+        {/* Content */}
+        {!loading && !error && (
+          <>
+            {/* Section 1: Performance */}
+            <section className="wf-section">
+              <div className="wf-section-header">
+                <span className="wf-section-number">1</span>
+                <div>
+                  <h2 className="wf-section-title">Performance vs. Prior Year</h2>
+                  <p className="wf-section-subtitle">Green = beating PY, Yellow = flat to -5%, Red = below -5%.</p>
+                </div>
               </div>
-            )}
-          </div>
 
-          {/* Utilization */}
-          <div className="wf-section">
-            <div className="wf-section-title">Section 1b: Utilization</div>
-            <UtilizationTable data={utilization} />
-          </div>
+              {/* MTD Gauges */}
+              <div className="wf-gauge-row">
+                <div className="wf-gauge-row-header">Month-to-Date</div>
+                <div className="wf-gauge-grid">
+                  {buildGauges('MTD').map((g, i) => <GaugeCard key={i} {...g} periodLabel="MTD" />)}
+                </div>
+              </div>
 
-          {/* Working Capital */}
-          <div className="wf-section">
-            <div className="wf-section-title">Section 2: Working Capital Risk</div>
-            <div className="wf-risk-grid">
-              <div className="wf-risk-panel">
-                <div className="wf-sub-label">AR Aging</div>
+              {/* YTD Gauges */}
+              <div className="wf-gauge-row">
+                <div className="wf-gauge-row-header">Year-to-Date</div>
+                <div className="wf-gauge-grid">
+                  {buildGauges('YTD').map((g, i) => <GaugeCard key={i} {...g} periodLabel="YTD" />)}
+                </div>
+              </div>
+
+              {/* Performance Tables */}
+              <div className="wf-card">
+                <div className="wf-perf-grid">
+                  <PerfTable rows={buildPerfRows('MTD')} label="Month-to-Date" />
+                  <PerfTable rows={buildPerfRows('YTD')} label="Year-to-Date" />
+                </div>
+
+                {/* Service Line Toggle */}
+                <div style={{ borderTop: '1px solid #e5e1dc', paddingTop: 16, marginTop: 8 }}>
+                  <button className="wf-sl-toggle" onClick={() => setSlExpanded(!slExpanded)}>
+                    {slExpanded ? '\u25BC' : '\u25B6'} Service Line Breakdown
+                  </button>
+                  {slExpanded && serviceLines.length > 0 && (
+                    <div className="wf-table-wrap" style={{ marginTop: 16 }}>
+                      <table className="wf-data-table">
+                        <thead><tr><th>Service Line</th><th>CY MTD Hrs</th><th>PY MTD Hrs</th><th>% Chg</th><th>CY MTD TVP</th><th>PY MTD TVP</th><th>% Chg</th></tr></thead>
+                        <tbody>
+                          {serviceLines.map((r, i) => {
+                            const hp = pctChange(num(r.cy_mtd_hours), num(r.py_mtd_hours));
+                            const tp = pctChange(num(r.cy_mtd_tvp), num(r.py_mtd_tvp));
+                            return (
+                              <tr key={i}>
+                                <td>{r.service_line}</td>
+                                <td className="tabnum">{fmtNum(r.cy_mtd_hours)}</td>
+                                <td className="tabnum">{fmtNum(r.py_mtd_hours)}</td>
+                                <td className="tabnum" style={{ color: getRYG(hp).color }}>{pct(hp)}</td>
+                                <td className="tabnum">{fmtFull(r.cy_mtd_tvp)}</td>
+                                <td className="tabnum">{fmtFull(r.py_mtd_tvp)}</td>
+                                <td className="tabnum" style={{ color: getRYG(tp).color }}>{pct(tp)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* Section 1b: Utilization */}
+            <section className="wf-section">
+              <div className="wf-section-header">
+                <span className="wf-section-number">1b</span>
+                <div>
+                  <h2 className="wf-section-title">Utilization &mdash; Avg Billable Hours by Level</h2>
+                  <p className="wf-section-subtitle">Average billable hours per person per week.</p>
+                </div>
+              </div>
+              <div className="wf-card">
+                <UtilizationTable data={utilization} />
+                <div className="wf-note-box">
+                  <strong>Note:</strong> Average billable hours per person per week at each level.
+                </div>
+              </div>
+            </section>
+
+            {/* Section 2: Working Capital Risk */}
+            <section className="wf-section">
+              <div className="wf-section-header">
+                <span className="wf-section-number">2</span>
+                <div>
+                  <h2 className="wf-section-title">Working Capital Risk</h2>
+                  <p className="wf-section-subtitle">AR aging distribution, at-risk WIP and AR over 60 days.</p>
+                </div>
+              </div>
+
+              <div className="wf-card">
                 <ARAgingChart data={arAging} />
-              </div>
-              <div className="wf-risk-panel">
-                <div className="wf-sub-label">WIP At-Risk (&gt;60 days)</div>
+                <div className="wf-divider" />
+                <div className="wf-sub-label">At-Risk WIP</div>
                 <RiskTable items={wipRisk} type="WIP" />
               </div>
-            </div>
-          </div>
 
-          {/* AR Risk */}
-          <div className="wf-section">
-            <div className="wf-risk-panel">
-              <div className="wf-sub-label">AR At-Risk (&gt;60 days)</div>
-              <RiskTable items={arRisk} type="AR" />
-            </div>
-          </div>
+              <div className="wf-card" style={{ marginTop: 16 }}>
+                <div className="wf-sub-label">At-Risk AR</div>
+                <RiskTable items={arRisk} type="AR" />
+              </div>
+            </section>
 
-          {/* Footer */}
-          <div className="wf-footer">
-            <span>{firmName}</span>
-            <span>Generated {new Date().toLocaleString()}</span>
-          </div>
-        </>
-      )}
+            {/* Footer */}
+            <footer className="wf-footer">
+              {firmName} &middot; Generated {new Date().toLocaleString()}
+            </footer>
+          </>
+        )}
+      </div>
     </div>
   );
 }
