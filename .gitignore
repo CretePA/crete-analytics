@@ -1,6 +1,5 @@
 node_modules/
-frontend/build/
-__pycache__/
-*.pyc
+.next/
+out/
 .env
-.DS_Store
+.env.local
