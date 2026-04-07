@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
+const { HOST } = require('@/lib/databricks');
 
-const HOST = process.env.DATABRICKS_HOST || process.env.DATABRICKS_SERVER_HOSTNAME || '';
 const GENIE_SPACE_ID = process.env.GENIE_SPACE_ID || '';
 
 async function getAuthHeaders() {
