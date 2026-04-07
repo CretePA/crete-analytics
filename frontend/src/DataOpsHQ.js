@@ -187,7 +187,7 @@ export default function DataOpsHQ() {
         <div className="ops-kpi-card" data-status={summary?.gold?.status || 'ok'}>
           <div className="ops-kpi-label">Gold Layer</div>
           <div className="ops-kpi-value">{summary ? `${summary.gold.fresh}/${summary.gold.total}` : '\u2014/\u2014'}</div>
-          <div className="ops-kpi-detail">firms with fresh data (&le;7d)</div>
+          <div className="ops-kpi-detail">firms with fresh data (&le;2d)</div>
           <KpiBar items={goldBarItems} okCount={goldOk} />
           <KpiTooltip items={summary?.gold?.stale} label="STALE FIRMS" />
         </div>

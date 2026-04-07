@@ -5,7 +5,6 @@ Crete Analytics — Databricks Analytics Platform
 import os
 import time
 import logging
-import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -438,32 +437,20 @@ ERROR_HOURS = 24
 OPS_CACHE_TTL = 120  # 2 minutes
 OPS_CACHE_TTL_SLOW = 3600  # 1 hour
 _ops_cache = {}
+_ops_cache_lock = threading.Lock()
 
 
 def _ops_cached(key, fn, ttl=None):
-    entry = _ops_cache.get(key)
     cache_ttl = ttl or OPS_CACHE_TTL
-    if entry and (time.time() - entry["ts"]) < cache_ttl:
-        return entry["data"]
+    with _ops_cache_lock:
+        entry = _ops_cache.get(key)
+        if entry and (time.time() - entry["ts"]) < cache_ttl:
+            return entry["data"]
     data = fn()
-    _ops_cache[key] = {"data": data, "ts": time.time()}
+    with _ops_cache_lock:
+        _ops_cache[key] = {"data": data, "ts": time.time()}
     return data
 
-
-def _validate_date(val):
-    if not val:
-        return None
-    if not re.match(r'^\d{4}-\d{2}-\d{2}$', val):
-        raise ValueError("Invalid date format")
-    return val
-
-
-def _validate_id(val):
-    if not val:
-        return None
-    if not re.match(r'^[\w\s\-\.]+$', val):
-        raise ValueError("Invalid ID")
-    return val
 
 
 HEARTBEAT_SQL = f"""
@@ -587,7 +574,7 @@ def _ops_jobs_raw():
 def ops_heartbeat():
     try:
         return JSONResponse(_ops_cached("heartbeat", _ops_heartbeat_raw))
-    except BaseException as e:
+    except Exception as e:
         logger.exception("ops heartbeat failed")
         return JSONResponse({"detail": f"{type(e).__name__}: {e}"}, status_code=500)
 
@@ -596,7 +583,7 @@ def ops_heartbeat():
 def ops_jobs():
     try:
         return JSONResponse(_ops_cached("jobs", _ops_jobs_raw))
-    except BaseException as e:
+    except Exception as e:
         logger.exception("ops jobs failed")
         return JSONResponse({"detail": f"{type(e).__name__}: {e}"}, status_code=500)
 
@@ -617,7 +604,7 @@ def ops_spend():
             "prior_30_dbus": prior.get("total_dbus", 0),
             "pct_change": pct_change, "breakdown": breakdown,
         })
-    except BaseException as e:
+    except Exception as e:
         logger.exception("ops spend failed")
         return JSONResponse({"detail": f"{type(e).__name__}: {e}"}, status_code=500)
 
@@ -626,7 +613,7 @@ def ops_spend():
 def ops_gold_freshness():
     try:
         return JSONResponse(_ops_cached("gold_freshness", lambda: run_query(GOLD_FRESHNESS_SQL)["rows"], OPS_CACHE_TTL_SLOW))
-    except BaseException as e:
+    except Exception as e:
         logger.exception("ops gold freshness failed")
         return JSONResponse({"detail": f"{type(e).__name__}: {e}"}, status_code=500)
 
@@ -642,7 +629,7 @@ def ops_summary():
             hb_data = f_hb.result()
             jobs_data = f_jobs.result()
             gold_data = f_gold.result()
-    except BaseException as e:
+    except Exception as e:
         logger.exception("ops summary failed")
         return JSONResponse({"detail": f"{type(e).__name__}: {e}"}, status_code=500)
 
@@ -680,12 +667,16 @@ def _warm_ops_cache():
     logger.info("Warming ops cache in background")
     try:
         with ThreadPoolExecutor(max_workers=4) as pool:
-            pool.submit(_ops_cached, "heartbeat", _ops_heartbeat_raw)
-            pool.submit(_ops_cached, "jobs", _ops_jobs_raw)
-            pool.submit(_ops_cached, "gold_freshness",
-                        lambda: run_query(GOLD_FRESHNESS_SQL)["rows"], OPS_CACHE_TTL_SLOW)
-            pool.submit(_ops_cached, "spend",
-                        lambda: run_query(SPEND_SQL)["rows"], OPS_CACHE_TTL_SLOW)
+            futures = [
+                pool.submit(_ops_cached, "heartbeat", _ops_heartbeat_raw),
+                pool.submit(_ops_cached, "jobs", _ops_jobs_raw),
+                pool.submit(_ops_cached, "gold_freshness",
+                            lambda: run_query(GOLD_FRESHNESS_SQL)["rows"], OPS_CACHE_TTL_SLOW),
+                pool.submit(_ops_cached, "spend",
+                            lambda: run_query(SPEND_SQL)["rows"], OPS_CACHE_TTL_SLOW),
+            ]
+            for f in futures:
+                f.result()
         logger.info("Ops cache warm-up complete")
     except Exception:
         logger.exception("Ops cache warm-up failed (non-fatal)")
