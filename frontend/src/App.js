@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import WeeklyFlash from './WeeklyFlash';
+import DataOpsHQ from './DataOpsHQ';
 
 const NAV_LINKS = [
-  { label: 'Crete Data Ops', url: 'https://crete-hq-7405618890836566.6.azure.databricksapps.com' },
   { label: 'PerformYard', url: 'https://performyard-dashboard-7405618890836566.6.azure.databricksapps.com' },
 ];
 
@@ -136,11 +136,21 @@ function HomePage() {
 function App() {
   const [userName, setUserName] = useState('');
   const [navOpen, setNavOpen] = useState(false);
-  const [page, setPage] = useState(window.location.hash === '#flash' ? 'flash' : 'home');
+  const [page, setPage] = useState(() => {
+    const h = window.location.hash;
+    if (h === '#flash') return 'flash';
+    if (h === '#ops') return 'ops';
+    return 'home';
+  });
 
   useEffect(() => {
     fetch('/api/whoami').then(r => r.ok ? r.json() : null).then(d => { if (d?.name) setUserName(d.name); }).catch(() => {});
-    const onHash = () => setPage(window.location.hash === '#flash' ? 'flash' : 'home');
+    const onHash = () => {
+      const h = window.location.hash;
+      if (h === '#flash') setPage('flash');
+      else if (h === '#ops') setPage('ops');
+      else setPage('home');
+    };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -172,6 +182,14 @@ function App() {
               <span className="nav-label">Weekly Flash</span>
             </a>
           </li>
+          <li className={page === 'ops' ? 'nav-active' : ''}>
+            <a href="#ops" onClick={e => { e.preventDefault(); navigate('ops'); }}>
+              <span className="nav-icon">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="5" cy="4" r="1.5" fill="currentColor"/><circle cx="11" cy="8" r="1.5" fill="currentColor"/><circle cx="7" cy="12" r="1.5" fill="currentColor"/></svg>
+              </span>
+              <span className="nav-label">Data Ops</span>
+            </a>
+          </li>
           <li className="nav-divider" />
           {NAV_LINKS.map((link, i) => (
             <li key={i}>
@@ -190,14 +208,14 @@ function App() {
         <header className="top-bar">
           <div className="top-bar-left">
             <button className="nav-toggle" onClick={() => setNavOpen(!navOpen)} aria-label="Toggle navigation"><span className="hamburger" /></button>
-            <h1 className="app-title">{page === 'flash' ? 'Weekly Flash' : 'Crete Analytics'}</h1>
+            <h1 className="app-title">{page === 'flash' ? 'Weekly Flash' : page === 'ops' ? 'Data Ops HQ' : 'Crete Analytics'}</h1>
           </div>
           <div className="top-bar-right">
             {userName && <span className="user-greeting">hello {userName.toLowerCase()}</span>}
           </div>
         </header>
         <main className="page-body">
-          {page === 'flash' ? <WeeklyFlash /> : <HomePage />}
+          {page === 'flash' ? <WeeklyFlash /> : page === 'ops' ? <DataOpsHQ /> : <HomePage />}
         </main>
       </div>
     </div>

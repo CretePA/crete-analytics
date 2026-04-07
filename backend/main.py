@@ -3,7 +3,11 @@ Crete Analytics — Databricks Analytics Platform
 """
 
 import os
+import time
 import logging
+import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from contextlib import contextmanager
 from decimal import Decimal
@@ -424,6 +428,272 @@ def whoami(request: Request):
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Data Ops — Ingestion heartbeat, job health, gold freshness, spend
+# ---------------------------------------------------------------------------
+WARN_HOURS = 6
+ERROR_HOURS = 24
+OPS_CACHE_TTL = 120  # 2 minutes
+OPS_CACHE_TTL_SLOW = 3600  # 1 hour
+_ops_cache = {}
+
+
+def _ops_cached(key, fn, ttl=None):
+    entry = _ops_cache.get(key)
+    cache_ttl = ttl or OPS_CACHE_TTL
+    if entry and (time.time() - entry["ts"]) < cache_ttl:
+        return entry["data"]
+    data = fn()
+    _ops_cache[key] = {"data": data, "ts": time.time()}
+    return data
+
+
+def _validate_date(val):
+    if not val:
+        return None
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', val):
+        raise ValueError("Invalid date format")
+    return val
+
+
+def _validate_id(val):
+    if not val:
+        return None
+    if not re.match(r'^[\w\s\-\.]+$', val):
+        raise ValueError("Invalid ID")
+    return val
+
+
+HEARTBEAT_SQL = f"""
+    WITH agg AS (
+        SELECT firm, system,
+            MAX(completed_at) AS last_completed,
+            COUNT(DISTINCT DATE(started_at)) AS run_days,
+            COUNT(*) AS total_runs,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_runs
+        FROM sandbox.gold.vw_ops__ingestion_run_history
+        GROUP BY firm, system
+    ),
+    latest AS (
+        SELECT firm, run_mode AS latest_mode, status AS latest_status,
+            ROW_NUMBER() OVER (PARTITION BY firm ORDER BY completed_at DESC) AS rn
+        FROM sandbox.gold.vw_ops__ingestion_run_history
+    )
+    SELECT a.firm, a.system, a.last_completed, a.run_days, a.total_runs, a.failed_runs,
+        l.latest_mode, l.latest_status,
+        CASE WHEN a.run_days > 1 THEN 'ongoing' ELSE 'historical' END AS classification,
+        ROUND((UNIX_TIMESTAMP(CURRENT_TIMESTAMP) - UNIX_TIMESTAMP(a.last_completed)) / 3600.0, 1) AS hours_since_last,
+        CASE
+            WHEN a.run_days <= 1 THEN 'historical'
+            WHEN (UNIX_TIMESTAMP(CURRENT_TIMESTAMP) - UNIX_TIMESTAMP(a.last_completed)) / 3600.0 <= {WARN_HOURS} THEN 'ok'
+            WHEN (UNIX_TIMESTAMP(CURRENT_TIMESTAMP) - UNIX_TIMESTAMP(a.last_completed)) / 3600.0 <= {ERROR_HOURS} THEN 'warn'
+            ELSE 'error'
+        END AS freshness_status
+    FROM agg a LEFT JOIN latest l ON a.firm = l.firm AND l.rn = 1
+    ORDER BY CASE WHEN a.run_days <= 1 THEN 2 ELSE 1 END, a.last_completed ASC
+"""
+
+JOBS_SQL = """
+    WITH job_stats AS (
+        SELECT j.name AS job_name, COUNT(*) AS total_runs,
+            SUM(CASE WHEN rt.result_state = 'SUCCEEDED' THEN 1 ELSE 0 END) AS passed,
+            SUM(CASE WHEN rt.result_state IN ('FAILED', 'ERROR', 'TIMEDOUT') THEN 1 ELSE 0 END) AS failed,
+            ROUND(100.0 * SUM(CASE WHEN rt.result_state IN ('FAILED', 'ERROR', 'TIMEDOUT') THEN 1 ELSE 0 END)
+                / NULLIF(COUNT(*), 0), 1) AS error_pct,
+            MAX(rt.period_end_time) AS last_run
+        FROM system.lakeflow.job_run_timeline rt
+        JOIN system.lakeflow.jobs j ON rt.job_id = j.job_id
+        WHERE rt.period_end_time >= CURRENT_TIMESTAMP - INTERVAL 24 HOURS
+            AND rt.result_state IS NOT NULL
+        GROUP BY j.name
+    ),
+    latest_errors AS (
+        SELECT j.name AS job_name, rt.termination_code,
+            ROW_NUMBER() OVER (PARTITION BY j.name ORDER BY rt.period_end_time DESC) AS rn
+        FROM system.lakeflow.job_run_timeline rt
+        JOIN system.lakeflow.jobs j ON rt.job_id = j.job_id
+        WHERE rt.period_end_time >= CURRENT_TIMESTAMP - INTERVAL 24 HOURS
+            AND rt.result_state IN ('FAILED', 'ERROR', 'TIMEDOUT')
+    )
+    SELECT s.*, e.termination_code AS last_error
+    FROM job_stats s LEFT JOIN latest_errors e ON s.job_name = e.job_name AND e.rn = 1
+    ORDER BY s.error_pct DESC, s.job_name
+"""
+
+SPEND_SQL = """
+    SELECT
+        CASE WHEN u.usage_date >= CURRENT_DATE - INTERVAL 30 DAYS THEN 'last_30' ELSE 'prior_30' END AS period,
+        ROUND(SUM(u.usage_quantity * lp.pricing.default), 2) AS total_cost,
+        ROUND(SUM(u.usage_quantity), 1) AS total_dbus
+    FROM system.billing.usage u
+    JOIN system.billing.list_prices lp
+        ON u.sku_name = lp.sku_name AND u.usage_start_time >= lp.price_start_time
+        AND (lp.price_end_time IS NULL OR u.usage_start_time < lp.price_end_time)
+    WHERE u.usage_date >= CURRENT_DATE - INTERVAL 60 DAYS
+    GROUP BY 1 ORDER BY 1
+"""
+
+SPEND_BREAKDOWN_SQL = """
+    SELECT u.sku_name,
+        ROUND(SUM(CASE WHEN u.usage_date >= CURRENT_DATE - INTERVAL 30 DAYS
+            THEN u.usage_quantity * lp.pricing.default ELSE 0 END), 2) AS last_30_cost,
+        ROUND(SUM(CASE WHEN u.usage_date < CURRENT_DATE - INTERVAL 30 DAYS
+            THEN u.usage_quantity * lp.pricing.default ELSE 0 END), 2) AS prior_30_cost,
+        ROUND(SUM(CASE WHEN u.usage_date >= CURRENT_DATE - INTERVAL 30 DAYS
+            THEN u.usage_quantity * lp.pricing.default ELSE 0 END)
+          - SUM(CASE WHEN u.usage_date < CURRENT_DATE - INTERVAL 30 DAYS
+            THEN u.usage_quantity * lp.pricing.default ELSE 0 END), 2) AS delta
+    FROM system.billing.usage u
+    JOIN system.billing.list_prices lp
+        ON u.sku_name = lp.sku_name AND u.usage_start_time >= lp.price_start_time
+        AND (lp.price_end_time IS NULL OR u.usage_start_time < lp.price_end_time)
+    WHERE u.usage_date >= CURRENT_DATE - INTERVAL 60 DAYS
+    GROUP BY u.sku_name HAVING last_30_cost > 1 OR prior_30_cost > 1
+    ORDER BY delta DESC
+"""
+
+GOLD_FRESHNESS_SQL = f"""
+    WITH firm_freshness AS (
+        SELECT mf.member_firm_name AS firm, 'fct_time_entry' AS gold_table,
+            MAX(LEAST(te.entry_date, CURRENT_DATE)) AS latest_data_date,
+            COUNT(*) AS row_count
+        FROM {_tbl('fct_time_entry')} te
+        JOIN {_tbl('dim_member_firm')} mf ON te.member_firm_id = mf.member_firm_id
+        WHERE te.entry_date >= CURRENT_DATE - INTERVAL 90 DAYS
+        GROUP BY mf.member_firm_name
+    )
+    SELECT firm, gold_table, latest_data_date, row_count,
+        GREATEST(DATEDIFF(CURRENT_DATE, latest_data_date), 0) AS days_stale,
+        CASE
+            WHEN DATEDIFF(CURRENT_DATE, latest_data_date) <= 2 THEN 'ok'
+            WHEN DATEDIFF(CURRENT_DATE, latest_data_date) <= 7 THEN 'warn'
+            ELSE 'error'
+        END AS freshness_status
+    FROM firm_freshness ORDER BY latest_data_date DESC
+"""
+
+
+def _ops_heartbeat_raw():
+    return run_query(HEARTBEAT_SQL)["rows"]
+
+
+def _ops_jobs_raw():
+    return run_query(JOBS_SQL)["rows"]
+
+
+@app.get("/api/ops/heartbeat")
+def ops_heartbeat():
+    try:
+        return JSONResponse(_ops_cached("heartbeat", _ops_heartbeat_raw))
+    except BaseException as e:
+        logger.exception("ops heartbeat failed")
+        return JSONResponse({"detail": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
+@app.get("/api/ops/jobs")
+def ops_jobs():
+    try:
+        return JSONResponse(_ops_cached("jobs", _ops_jobs_raw))
+    except BaseException as e:
+        logger.exception("ops jobs failed")
+        return JSONResponse({"detail": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
+@app.get("/api/ops/spend")
+def ops_spend():
+    try:
+        data = _ops_cached("spend", lambda: run_query(SPEND_SQL)["rows"], OPS_CACHE_TTL_SLOW)
+        breakdown = _ops_cached("spend_breakdown", lambda: run_query(SPEND_BREAKDOWN_SQL)["rows"], OPS_CACHE_TTL_SLOW)
+        last = next((d for d in data if d["period"] == "last_30"), {})
+        prior = next((d for d in data if d["period"] == "prior_30"), {})
+        last_cost = last.get("total_cost", 0)
+        prior_cost = prior.get("total_cost", 0)
+        pct_change = round(((last_cost - prior_cost) / prior_cost) * 100, 1) if prior_cost else 0
+        return JSONResponse({
+            "last_30": last_cost, "prior_30": prior_cost,
+            "last_30_dbus": last.get("total_dbus", 0),
+            "prior_30_dbus": prior.get("total_dbus", 0),
+            "pct_change": pct_change, "breakdown": breakdown,
+        })
+    except BaseException as e:
+        logger.exception("ops spend failed")
+        return JSONResponse({"detail": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
+@app.get("/api/ops/gold-freshness")
+def ops_gold_freshness():
+    try:
+        return JSONResponse(_ops_cached("gold_freshness", lambda: run_query(GOLD_FRESHNESS_SQL)["rows"], OPS_CACHE_TTL_SLOW))
+    except BaseException as e:
+        logger.exception("ops gold freshness failed")
+        return JSONResponse({"detail": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
+@app.get("/api/ops/summary")
+def ops_summary():
+    try:
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            f_hb = pool.submit(_ops_cached, "heartbeat", _ops_heartbeat_raw)
+            f_jobs = pool.submit(_ops_cached, "jobs", _ops_jobs_raw)
+            f_gold = pool.submit(_ops_cached, "gold_freshness",
+                                 lambda: run_query(GOLD_FRESHNESS_SQL)["rows"], OPS_CACHE_TTL_SLOW)
+            hb_data = f_hb.result()
+            jobs_data = f_jobs.result()
+            gold_data = f_gold.result()
+    except BaseException as e:
+        logger.exception("ops summary failed")
+        return JSONResponse({"detail": f"{type(e).__name__}: {e}"}, status_code=500)
+
+    ongoing = [f for f in hb_data if f.get("classification") == "ongoing"]
+    fresh = [f for f in ongoing if f.get("freshness_status") == "ok"]
+    healthy_jobs = [j for j in jobs_data if (j.get("error_pct") or 0) == 0]
+    gold_fresh = [g for g in gold_data if g.get("freshness_status") == "ok"]
+    gold_stale = [f"{g['firm']} ({g.get('days_stale', '?')}d)" for g in gold_data if g.get("freshness_status") != "ok"]
+    total_runs = sum(f.get("total_runs", 0) for f in hb_data)
+    total_failed = sum(f.get("failed_runs", 0) for f in hb_data)
+    stale_firms = [f"{f['firm']} ({f.get('hours_since_last', '?')}h)" for f in ongoing if f.get("freshness_status") != "ok"]
+    failing_jobs = [f"{j['job_name']} ({j.get('error_pct', 0)}%)" for j in jobs_data if (j.get("error_pct") or 0) > 0]
+
+    return JSONResponse({
+        "freshness": {
+            "ok": len(fresh), "total": len(ongoing),
+            "status": "ok" if len(fresh) == len(ongoing) else ("warn" if len(fresh) >= len(ongoing) - 1 else "error"),
+            "failing": stale_firms,
+        },
+        "jobs": {
+            "healthy": len(healthy_jobs), "total": len(jobs_data),
+            "status": "ok" if len(healthy_jobs) == len(jobs_data) else ("warn" if len(healthy_jobs) >= len(jobs_data) - 1 else "error"),
+            "failing": failing_jobs,
+        },
+        "gold": {
+            "fresh": len(gold_fresh), "total": len(gold_data),
+            "status": "ok" if len(gold_fresh) == len(gold_data) else ("warn" if len(gold_stale) <= 3 else "error"),
+            "stale": gold_stale,
+        },
+        "pipeline": {"total_runs": total_runs, "total_failed": total_failed, "firms_monitored": len(hb_data)},
+    })
+
+
+def _warm_ops_cache():
+    logger.info("Warming ops cache in background")
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            pool.submit(_ops_cached, "heartbeat", _ops_heartbeat_raw)
+            pool.submit(_ops_cached, "jobs", _ops_jobs_raw)
+            pool.submit(_ops_cached, "gold_freshness",
+                        lambda: run_query(GOLD_FRESHNESS_SQL)["rows"], OPS_CACHE_TTL_SLOW)
+            pool.submit(_ops_cached, "spend",
+                        lambda: run_query(SPEND_SQL)["rows"], OPS_CACHE_TTL_SLOW)
+        logger.info("Ops cache warm-up complete")
+    except Exception:
+        logger.exception("Ops cache warm-up failed (non-fatal)")
+
+
+@app.on_event("startup")
+def on_startup():
+    threading.Thread(target=_warm_ops_cache, daemon=True).start()
 
 
 # ---- Serve React build ----
