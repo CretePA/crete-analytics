@@ -1,10 +1,24 @@
 import { NextResponse } from 'next/server';
 const { runQuery, tbl } = require('@/lib/databricks');
 
+function sanitizeDate(val) {
+  if (!val) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(val)) throw new Error('Invalid date format');
+  return val;
+}
+
+function sanitizeId(val) {
+  if (!val) return null;
+  if (!/^[\w\s\-\.]+$/.test(val)) throw new Error('Invalid firm ID');
+  return val;
+}
+
 function flashQuery(asOfDate, memberFirm) {
-  const dt = asOfDate ? `DATE('${asOfDate}')` : 'CURRENT_DATE()';
+  const safeDate = sanitizeDate(asOfDate);
+  const safeFirm = sanitizeId(memberFirm);
+  const dt = safeDate ? `DATE('${safeDate}')` : 'CURRENT_DATE()';
   const firmFilter = (col = 't.member_firm_id') =>
-    memberFirm ? ` AND ${col} = '${memberFirm}'` : '';
+    safeFirm ? ` AND ${col} = '${safeFirm}'` : '';
   return { dt, ff: firmFilter };
 }
 

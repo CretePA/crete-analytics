@@ -108,11 +108,19 @@ const GOLD_FRESHNESS_SQL = `
 
 async function heartbeatRaw() {
   const result = await runQuery(HEARTBEAT_SQL);
+  if (!result?.rows || !Array.isArray(result.rows)) {
+    console.error('heartbeat query returned unexpected shape:', result);
+    return [];
+  }
   return result.rows;
 }
 
 async function jobsRaw() {
   const result = await runQuery(JOBS_SQL);
+  if (!result?.rows || !Array.isArray(result.rows)) {
+    console.error('jobs query returned unexpected shape:', result);
+    return [];
+  }
   return result.rows;
 }
 
@@ -141,7 +149,10 @@ const handlers = {
   },
 
   'gold-freshness': async () => {
-    return cached('ops_gold', async () => (await runQuery(GOLD_FRESHNESS_SQL)).rows, CACHE_TTL_SLOW);
+    return cached('ops_gold', async () => {
+      const result = await runQuery(GOLD_FRESHNESS_SQL);
+      return result?.rows || [];
+    }, CACHE_TTL_SLOW);
   },
 
   summary: async () => {
